@@ -12,7 +12,7 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 prepare_input mov "$input"
-[ "$HAS_ALPHA" -eq 1 ] || fail "アルファチャンネルを確認できませんでした（形式: $PIX_FMT）。アルファ付きMOVを選択してください。"
+[ "$HAS_ALPHA" -eq 1 ] || fail "アルファチャンネルを確認できませんでした（形式: ${PIX_FMT}）。アルファ付きMOVを選択してください。"
 OUTPUT_DIR=$(cd "${output_dir:-$INPUT_DIR}" && pwd)
 alpha="$OUTPUT_DIR/${STEM}_Alpha.mp4"
 rgb="$OUTPUT_DIR/${STEM}_RGB.mp4"

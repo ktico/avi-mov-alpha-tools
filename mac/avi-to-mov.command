@@ -16,7 +16,7 @@ while [ "$#" -gt 0 ]; do
 done
 prepare_input avi "$input"
 if [ "$HAS_ALPHA" -ne 1 ] && [ "$allow" -ne 1 ]; then
-    warning="アルファチャンネルを確認できませんでした（形式: $PIX_FMT）。
+    warning="アルファチャンネルを確認できませんでした（形式: ${PIX_FMT}）。
 変換を続けると透過のないMOVになります。新しい透過部分は作成しません。
 変換を続けますか？"
     if [ "$GUI" -eq 1 ]; then
