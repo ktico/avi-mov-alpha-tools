@@ -6,7 +6,7 @@ root = Path(__file__).resolve().parent
 dist = root / 'dist'
 dist.mkdir(exist_ok=True)
 for platform in ('windows', 'mac'):
-    path = dist / f'avi-mov-alpha-tools-{platform}-v1.0.0.zip'
+    path = dist / f'avi-mov-alpha-tools-{platform}-v1.1.0.zip'
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.write(root / 'README.md', 'avi-mov-alpha-tools/README.md')
         for source in sorted((root / platform).rglob('*')):

@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -35,6 +36,15 @@ def split(path, expected=0):
         args = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ROOT / 'windows/MOV_Alpha_RGB変換/Split-Mov.ps1', '-NoGui', '-InputPath', path]
     else:
         args = ['/bin/bash', ROOT / 'mac/mov-to-alpha-rgb.command', path]
+    return call(args, expected)
+
+def split_avi(path, allow=False, expected=0):
+    if WINDOWS:
+        args = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ROOT / 'windows/MOV_Alpha_RGB変換/Split-Mov.ps1', '-NoGui', '-InputKind', 'Avi', '-InputPath', path]
+        if allow: args += ['-AllowNoAlpha']
+    else:
+        args = ['/bin/bash', ROOT / 'mac/avi-to-alpha-rgb.command', path]
+        if allow: args += ['--allow-no-alpha']
     return call(args, expected)
 
 def probe(path):
@@ -92,12 +102,38 @@ with tempfile.TemporaryDirectory(prefix='alpha tools ', dir=ROOT) as directory:
     pair_hashes = digest(alpha), digest(rgb)
     split(mov, expected=1)
     assert pair_hashes == (digest(alpha), digest(rgb))
+    # Direct AVI split must use the original alpha without a ProRes intermediate.
+    direct = work / "直接 透過's.avi"
+    shutil.copyfile(source, direct)
+    direct_hash = digest(direct)
+    direct_result = split_avi(direct)
+    assert b'99 %' in direct_result.stdout
+    direct_alpha = work / (direct.stem + '_Alpha.mp4')
+    direct_rgb = work / (direct.stem + '_RGB.mp4')
+    assert pixels(direct, True) == pixels(direct_alpha)
+    assert not direct.with_suffix('.mov').exists()
+    for path in (direct_alpha, direct_rgb):
+        video_info = probe(path)
+        video = next(s for s in video_info['streams'] if s['codec_type'] == 'video')
+        assert video['nb_read_frames'] == '20'
+        assert abs(float(video_info['format']['duration']) - 2) < .05
+    assert all(s['codec_type'] != 'audio' for s in probe(direct_alpha)['streams'])
+    assert any(s['codec_type'] == 'audio' for s in probe(direct_rgb)['streams'])
+    direct_pair_hash = digest(direct_alpha), digest(direct_rgb)
+    split_avi(direct, expected=1)
+    assert direct_pair_hash == (digest(direct_alpha), digest(direct_rgb))
+    assert digest(direct) == direct_hash
     opaque = work / 'opaque.avi'
     encode('-f', 'lavfi', '-i', 'color=blue:s=32x32:d=1', '-c:v', 'rawvideo', opaque)
     opaque_hash = digest(opaque)
     avi(opaque, expected=1)
     assert not opaque.with_suffix('.mov').exists()
     avi(opaque, allow=True)
+    split_avi(opaque, expected=1)
+    assert not (work / 'opaque_Alpha.mp4').exists()
+    split_avi(opaque, allow=True)
+    opaque_mask = pixels(work / 'opaque_Alpha.mp4')
+    assert opaque_mask == bytes([255]) * (32 * 32), 'Approved non-alpha AVI mask must be fully opaque'
     noalpha_mov = work / 'no-alpha.mov'
     encode('-i', opaque, '-c:v', 'libx264', noalpha_mov)
     split(noalpha_mov, expected=1)

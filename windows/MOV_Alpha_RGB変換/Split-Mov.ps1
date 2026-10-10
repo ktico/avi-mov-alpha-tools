@@ -1,10 +1,13 @@
-﻿param([string]$InputPath, [string]$OutputDirectory, [switch]$NoGui)
+﻿param([string]$InputPath, [string]$OutputDirectory, [switch]$NoGui,
+      [ValidateSet('Mov','Avi')][string]$InputKind = 'Mov', [switch]$AllowNoAlpha)
 $ErrorActionPreference = 'Stop'
+$formatName = $InputKind.ToUpperInvariant()
+$activity = "$formatName → Alpha / RGB変換"
 Add-Type -AssemblyName System.Windows.Forms
 . (Join-Path $PSScriptRoot 'Conversion-Progress.ps1')
 function Notify([string]$Message, [string]$Kind = 'Information') {
     if ($NoGui) { Write-Host $Message } else {
-        [void][System.Windows.Forms.MessageBox]::Show($Message, 'MOV → Alpha / RGB変換', 'OK', $Kind)
+        [void][System.Windows.Forms.MessageBox]::Show($Message, $activity, 'OK', $Kind)
     }
 }
 function Find-Tool([string]$Name) {
@@ -26,21 +29,31 @@ try {
     if (-not $InputPath) {
         if ($NoGui) { throw 'InputPathを指定してください。' }
         $dialog = New-Object System.Windows.Forms.OpenFileDialog
-        $dialog.Title = 'アルファ付きのMOVファイルを選択'
-        $dialog.Filter = 'MOVファイル (*.mov)|*.mov'
+        $extension = $InputKind.ToLowerInvariant()
+        $dialog.Title = "変換する${formatName}ファイルを選択"
+        $dialog.Filter = "${formatName}ファイル (*.$extension)|*.$extension"
         if ($dialog.ShowDialog() -ne 'OK') { exit 0 }
         $InputPath = $dialog.FileName
         $dialog.Dispose()
     }
     $InputPath = (Resolve-Path -LiteralPath $InputPath).Path
-    if ([IO.Path]::GetExtension($InputPath) -ine '.mov') { throw 'MOVファイルを選択してください。' }
+    if ([IO.Path]::GetExtension($InputPath) -ine ('.' + $InputKind.ToLowerInvariant())) { throw "${formatName}ファイルを選択してください。" }
     $info = Probe @('-v','error','-select_streams','v:0','-show_entries','stream=pix_fmt,codec_name,width,height,duration:format=duration','-of','json','-i',$InputPath)
     if (@($info.streams).Count -eq 0) { throw '映像トラックがありません。' }
     $pixelFormat = $info.streams[0].pix_fmt
     $formats = Probe @('-v','error','-show_pixel_formats','-of','json')
     $descriptor = @($formats.pixel_formats | Where-Object { $_.name -eq $pixelFormat })
-    if ($descriptor.Count -ne 1 -or $descriptor[0].flags.alpha -ne 1) {
-        throw "アルファチャンネルを確認できませんでした（映像形式: $pixelFormat）。アルファ付きMOVを選択してください。"
+    $hasAlpha = $descriptor.Count -eq 1 -and $descriptor[0].flags.alpha -eq 1
+    if (-not $hasAlpha) {
+        if ($InputKind -eq 'Mov') {
+            throw "アルファチャンネルを確認できませんでした（映像形式: $pixelFormat）。アルファ付きMOVを選択してください。"
+        }
+        if (-not $AllowNoAlpha) {
+            if ($NoGui) { throw 'アルファがありません。承認して続ける場合は-AllowNoAlphaを指定してください。' }
+            $warning = "アルファチャンネルを確認できませんでした（映像形式: $pixelFormat）。`n`n続けると、Alphaは白一色（すべて不透明）のマスク、RGBは通常の色の映像になります。`n透過の新規作成は行いません。変換を続けますか？"
+            $answer = [System.Windows.Forms.MessageBox]::Show($warning, 'アルファチャンネルの警告', 'YesNo', 'Warning', 'Button2')
+            if ($answer -ne 'Yes') { exit 0 }
+        }
     }
     if (-not $OutputDirectory) { $OutputDirectory = [IO.Path]::GetDirectoryName($InputPath) }
     $OutputDirectory = (Resolve-Path -LiteralPath $OutputDirectory).Path
@@ -48,7 +61,7 @@ try {
     $alphaPath = Join-Path $OutputDirectory ($stem + '_Alpha.mp4')
     $rgbPath = Join-Path $OutputDirectory ($stem + '_RGB.mp4')
     if ((Test-Path -LiteralPath $alphaPath) -or (Test-Path -LiteralPath $rgbPath)) {
-        throw "出力先に同名ファイルがあります。上書きせず終了しました。既存ファイルを移動するか、入力MOVの名前を変更して再実行してください。`n$alphaPath`n$rgbPath"
+        throw "出力先に同名ファイルがあります。上書きせず終了しました。既存ファイルを移動するか、入力動画の名前を変更して再実行してください。`n$alphaPath`n$rgbPath"
     }
     $duration = 0.0
     [void][double]::TryParse([string]$info.format.duration, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$duration)
@@ -58,9 +71,11 @@ try {
     $rgbTemp = Join-Path $temporary 'rgb.mp4'
     $log = Join-Path $OutputDirectory ($stem + '_Alpha_RGB.log.txt')
     # 両方を同じデコード・タイムスタンプから作成し、同期を維持します。
-    $filters = '[0:v:0]split=2[a][r];[a]alphaextract,scale=in_range=full:out_range=full,pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[alpha];[r]pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[rgb]'
-    Write-Host "アルファあり: $pixelFormat`n保存先:`n$alphaPath`n$rgbPath"
-    Invoke-FfmpegProgress -Encoder $encoder -Duration $duration -Activity 'MOV → Alpha / RGB変換' -LogPath $log -NoGui:$NoGui -Arguments @('-n','-i',$InputPath,'-filter_complex',$filters,'-map','[alpha]','-an','-c:v','libx264','-preset','medium','-crf','0','-color_range','pc','-movflags','+faststart',$alphaTemp,'-map','[rgb]','-map','0:a?','-c:v','libx264','-preset','medium','-crf','18','-c:a','aac','-b:a','192k','-movflags','+faststart',$rgbTemp)
+    $alphaPreparation = ''
+    if (-not $hasAlpha) { $alphaPreparation = 'format=yuva444p,' }
+    $filters = '[0:v:0]split=2[a][r];[a]' + $alphaPreparation + 'alphaextract,scale=in_range=full:out_range=full,pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[alpha];[r]pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[rgb]'
+    Write-Host "アルファチャンネル: $hasAlpha / $pixelFormat`n保存先:`n$alphaPath`n$rgbPath"
+    Invoke-FfmpegProgress -Encoder $encoder -Duration $duration -Activity $activity -LogPath $log -NoGui:$NoGui -Arguments @('-n','-i',$InputPath,'-filter_complex',$filters,'-map','[alpha]','-an','-c:v','libx264','-preset','medium','-crf','0','-color_range','pc','-movflags','+faststart',$alphaTemp,'-map','[rgb]','-map','0:a?','-c:v','libx264','-preset','medium','-crf','18','-c:a','aac','-b:a','192k','-movflags','+faststart',$rgbTemp)
     foreach ($file in @($alphaTemp, $rgbTemp)) {
         $check = Probe @('-v','error','-select_streams','v:0','-show_entries','stream=codec_name,width,height','-of','json','-i',$file)
         if ($check.streams[0].codec_name -ne 'h264') { throw '出力映像の確認に失敗しました。' }
