@@ -45,9 +45,6 @@ try {
     $descriptor = @($formats.pixel_formats | Where-Object { $_.name -eq $pixelFormat })
     $hasAlpha = $descriptor.Count -eq 1 -and $descriptor[0].flags.alpha -eq 1
     if (-not $hasAlpha) {
-        if ($InputKind -eq 'Mov') {
-            throw "アルファチャンネルを確認できませんでした（映像形式: $pixelFormat）。アルファ付きMOVを選択してください。"
-        }
         if (-not $AllowNoAlpha) {
             if ($NoGui) { throw 'アルファがありません。承認して続ける場合は-AllowNoAlphaを指定してください。' }
             $warning = "アルファチャンネルを確認できませんでした（映像形式: $pixelFormat）。`n`n続けると、Alphaは白一色（すべて不透明）のマスク、RGBは通常の色の映像になります。`n透過の新規作成は行いません。変換を続けますか？"

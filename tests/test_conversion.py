@@ -11,8 +11,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 WINDOWS = sys.platform == 'win32'
 
-def call(args, expected=0):
-    result = subprocess.run([str(a) for a in args], capture_output=True)
+def call(args, expected=0, env=None):
+    result = subprocess.run([str(a) for a in args], capture_output=True, stdin=subprocess.DEVNULL, env=env)
     if result.returncode != expected:
         raise AssertionError(f'Exit {result.returncode}, expected {expected}: {args}\n' + result.stdout.decode('utf-8', 'replace') + result.stderr.decode('utf-8', 'replace'))
     return result
@@ -31,11 +31,12 @@ def avi(path, output=None, allow=False, expected=0):
         if allow: args += ['--allow-no-alpha']
     return call(args, expected)
 
-def split(path, expected=0):
+def split(path, expected=0, allow=False):
     if WINDOWS:
         args = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ROOT / 'windows/MOV_Alpha_RGB変換/Split-Mov.ps1', '-NoGui', '-InputPath', path]
     else:
         args = ['/bin/bash', ROOT / 'mac/mov-to-alpha-rgb.command', path]
+    if allow: args += ['-AllowNoAlpha' if WINDOWS else '--allow-no-alpha']
     return call(args, expected)
 
 def split_avi(path, allow=False, expected=0):
@@ -138,6 +139,45 @@ with tempfile.TemporaryDirectory(prefix='alpha tools ', dir=ROOT) as directory:
     encode('-i', opaque, '-c:v', 'libx264', noalpha_mov)
     split(noalpha_mov, expected=1)
     assert not (work / 'no-alpha_Alpha.mp4').exists()
+    split(noalpha_mov, allow=True)
+    assert pixels(work / 'no-alpha_Alpha.mp4') == bytes([255]) * (32 * 32)
+    assert (work / 'no-alpha_RGB.mp4').exists()
+    if not WINDOWS:
+        # Exercise Finder-style launch, warning, cancel and approval without
+        # unattended UI dialogs. AppleScript syntax is compiled separately.
+        mock_bin = work / 'mock-dialogs'
+        mock_bin.mkdir()
+        mock = mock_bin / 'osascript'
+        mock.write_text('''#!/bin/bash
+case "$1" in
+  */choose-file.applescript) printf '%s\\n' "$ALPHA_TEST_SELECTED" ;;
+  */confirm.applescript) printf '%s\\n' "$2" >> "$ALPHA_TEST_DIALOG_LOG"; printf '%s\\n' "$ALPHA_TEST_APPROVAL" ;;
+  */notify.applescript) ;;
+  *) exit 2 ;;
+esac
+''', encoding='utf-8')
+        mock.chmod(0o755)
+        for kind, source_file, launcher in (
+            ('avi', opaque, 'avi-to-alpha-rgb.command'),
+            ('mov', noalpha_mov, 'mov-to-alpha-rgb.command'),
+        ):
+            selected = work / ('gui-warning.' + kind)
+            shutil.copyfile(source_file, selected)
+            dialog_log = work / ('dialog-' + kind + '.txt')
+            environment = dict(os.environ, PATH=str(mock_bin) + os.pathsep + os.environ['PATH'],
+                ALPHA_TEST_SELECTED=str(selected), ALPHA_TEST_DIALOG_LOG=str(dialog_log), ALPHA_TEST_APPROVAL='no')
+            call(['/bin/bash', ROOT / 'mac' / launcher], env=environment)
+            result_alpha = work / 'gui-warning_Alpha.mp4'
+            result_rgb = work / 'gui-warning_RGB.mp4'
+            assert not result_alpha.exists() and not result_rgb.exists(), 'Cancelled dialog must not convert'
+            assert 'アルファチャンネル' in dialog_log.read_text(encoding='utf-8')
+            environment['ALPHA_TEST_APPROVAL'] = 'yes'
+            call(['/bin/bash', ROOT / 'mac' / launcher], env=environment)
+            assert pixels(result_alpha) == bytes([255]) * (32 * 32)
+            assert result_rgb.exists()
+            # Retain the first pair and use a different stem for the second case.
+            result_alpha.rename(work / ('gui-' + kind + '_Alpha.mp4'))
+            result_rgb.rename(work / ('gui-' + kind + '_RGB.mp4'))
     # An odd-sized alpha MOV must produce the same padded size in both outputs.
     odd = work / 'odd.mov'
     encode('-f', 'lavfi', '-i', 'color=red:s=64x48:d=1,format=rgba,pad=65:49:color=black@0', '-c:v', 'qtrle', odd)

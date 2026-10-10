@@ -18,7 +18,6 @@ done
 case "$kind" in mov|avi) ;; *) fail '入力形式はmovまたはaviを指定してください。' ;; esac
 prepare_input "$kind" "$input"
 if [ "$HAS_ALPHA" -ne 1 ]; then
-    [ "$kind" = avi ] || fail "アルファチャンネルを確認できませんでした（形式: ${PIX_FMT}）。アルファ付きMOVを選択してください。"
     if [ "$allow" -ne 1 ]; then
         if [ "$GUI" -eq 1 ]; then
             warning="アルファチャンネルを確認できませんでした（形式: ${PIX_FMT}）。

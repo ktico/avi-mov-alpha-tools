@@ -3,7 +3,7 @@
 WindowsとmacOSで使う、FFmpegによる動画変換ツールです。
 
 - **AVI → MOV**：アルファの有無を確認し、ProRes 4444のMOVに変換します。アルファがない場合は警告し、承認された場合だけ続行します。
-- **MOV → Alpha / RGB**：アルファ付きMOVから、`元の名前_Alpha.mp4`と`元の名前_RGB.mp4`を作ります。
+- **MOV → Alpha / RGB**：MOVから、`元の名前_Alpha.mp4`と`元の名前_RGB.mp4`を作ります。アルファがない場合は警告し、承認された場合は白一色のAlphaマスクを出力します。
 - **AVI → Alpha / RGB**：AVIから直接、`元の名前_Alpha.mp4`と`元の名前_RGB.mp4`を作ります。中間MOVは作りません。アルファがない場合は警告し、承認された場合は白一色のAlphaマスクを出力します。
 - 進捗率・処理済みの尺・経過時間・推定残り時間を表示します。
 - 元の動画は変更しません。既存の出力は上書きしません。
@@ -46,11 +46,13 @@ Finderから起動できない場合は、ターミナルで`bash `に続けて`
 bash mac/avi-to-mov.command "/path/to/video.avi"
 bash mac/avi-to-mov.command --allow-no-alpha "/path/to/video.avi"
 bash mac/mov-to-alpha-rgb.command "/path/to/video.mov"
+bash mac/mov-to-alpha-rgb.command --allow-no-alpha "/path/to/video.mov"
 bash mac/avi-to-alpha-rgb.command "/path/to/video.avi"
 bash mac/avi-to-alpha-rgb.command --allow-no-alpha "/path/to/video.avi"
 ```
 
 ファイルパスを指定した場合はGUIを出しません。AVIにアルファがない場合は、明示的な`--allow-no-alpha`がなければ停止します。
+MOV分離でも同様です。ファイル選択画面から起動した場合は、アルファなしのAVI・MOVに対して確認画面を出し、承認後に白一色のAlphaマスクと通常のRGB映像を作ります。キャンセルすると変換しません。
 
 ## 保存されるもの
 
