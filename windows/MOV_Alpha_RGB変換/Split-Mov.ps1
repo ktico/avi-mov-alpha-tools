@@ -69,8 +69,9 @@ try {
     $log = Join-Path $OutputDirectory ($stem + '_Alpha_RGB.log.txt')
     # 両方を同じデコード・タイムスタンプから作成し、同期を維持します。
     $alphaPreparation = ''
-    if (-not $hasAlpha) { $alphaPreparation = 'format=yuva444p,' }
-    $filters = '[0:v:0]split=2[a][r];[a]' + $alphaPreparation + 'alphaextract,scale=in_range=full:out_range=full,pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[alpha];[r]pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[rgb]'
+    $alphaPadColor = 'black'
+    if (-not $hasAlpha) { $alphaPreparation = 'format=yuva444p,'; $alphaPadColor = 'white' }
+    $filters = '[0:v:0]split=2[a][r];[a]' + $alphaPreparation + 'alphaextract,scale=in_range=full:out_range=full,pad=ceil(iw/2)*2:ceil(ih/2)*2:color=' + $alphaPadColor + ',format=yuv420p[alpha];[r]pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[rgb]'
     Write-Host "アルファチャンネル: $hasAlpha / $pixelFormat`n保存先:`n$alphaPath`n$rgbPath"
     Invoke-FfmpegProgress -Encoder $encoder -Duration $duration -Activity $activity -LogPath $log -NoGui:$NoGui -Arguments @('-n','-i',$InputPath,'-filter_complex',$filters,'-map','[alpha]','-an','-c:v','libx264','-preset','medium','-crf','0','-color_range','pc','-movflags','+faststart',$alphaTemp,'-map','[rgb]','-map','0:a?','-c:v','libx264','-preset','medium','-crf','18','-c:a','aac','-b:a','192k','-movflags','+faststart',$rgbTemp)
     foreach ($file in @($alphaTemp, $rgbTemp)) {

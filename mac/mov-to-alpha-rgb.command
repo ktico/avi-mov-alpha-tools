@@ -38,8 +38,9 @@ for file in "$alpha" "$rgb"; do
 done
 TEMP_DIR=$(mktemp -d "$OUTPUT_DIR/.alpha-tools.XXXXXX")
 alpha_preparation=''
-if [ "$HAS_ALPHA" -ne 1 ]; then alpha_preparation='format=yuva444p,'; fi
-filters="[0:v:0]split=2[a][r];[a]${alpha_preparation}alphaextract,scale=in_range=full:out_range=full,pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[alpha];[r]pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[rgb]"
+alpha_pad_color=black
+if [ "$HAS_ALPHA" -ne 1 ]; then alpha_preparation='format=yuva444p,'; alpha_pad_color=white; fi
+filters="[0:v:0]split=2[a][r];[a]${alpha_preparation}alphaextract,scale=in_range=full:out_range=full,pad=ceil(iw/2)*2:ceil(ih/2)*2:color=${alpha_pad_color},format=yuv420p[alpha];[r]pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p[rgb]"
 run_conversion "$OUTPUT_DIR/${STEM}_Alpha_RGB.log.txt" -n -i "$INPUT_PATH" -filter_complex "$filters" -map '[alpha]' -an -c:v libx264 -preset medium -crf 0 -color_range pc -movflags +faststart "$TEMP_DIR/alpha.mp4" -map '[rgb]' -map '0:a?' -c:v libx264 -preset medium -crf 18 -c:a aac -b:a 192k -movflags +faststart "$TEMP_DIR/rgb.mp4"
 check_video "$TEMP_DIR/alpha.mp4" h264
 check_video "$TEMP_DIR/rgb.mp4" h264

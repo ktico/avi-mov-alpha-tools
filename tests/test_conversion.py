@@ -185,6 +185,10 @@ esac
     for suffix in ('Alpha', 'RGB'):
         video = next(s for s in probe(work / f'odd_{suffix}.mp4')['streams'] if s['codec_type'] == 'video')
         assert (video['width'], video['height']) == (66, 50)
+    odd_opaque = work / 'odd-opaque.avi'
+    encode('-f', 'lavfi', '-i', 'color=blue:s=64x48:d=1,format=bgr24,pad=65:49', '-c:v', 'rawvideo', odd_opaque)
+    split_avi(odd_opaque, allow=True)
+    assert pixels(work / 'odd-opaque_Alpha.mp4') == bytes([255]) * (66 * 50)
     assert digest(source) == original_hash and digest(opaque) == opaque_hash
     assert not list(work.glob('.alpha-tools.*'))
     assert not list(work.glob('.mov-split-*'))
